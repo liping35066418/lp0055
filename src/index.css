@@ -1,0 +1,127 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Space Grotesk', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #0F172A;
+    color: #F1F5F9;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  ::selection {
+    background: rgba(34, 211, 238, 0.3);
+    color: #F8FAFC;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #0F172A;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #334155;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-ink-900/60 backdrop-blur-xl border border-ink-700/60 shadow-glass rounded-2xl;
+  }
+
+  .btn-primary {
+    @apply px-6 py-3 rounded-full font-medium text-ink-950 bg-cyan hover:bg-cyan-glow transition-all duration-300 hover:shadow-glow active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none;
+  }
+
+  .btn-secondary {
+    @apply px-6 py-3 rounded-full font-medium text-ink-100 bg-ink-800 border border-ink-700 hover:border-cyan/50 hover:text-cyan transition-all duration-300 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-ghost {
+    @apply px-4 py-2 rounded-full text-ink-300 hover:text-cyan hover:bg-cyan/10 transition-all duration-200 active:scale-95;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium;
+  }
+
+  .chip-active {
+    @apply chip bg-cyan/15 text-cyan border border-cyan/30;
+  }
+
+  .chip-default {
+    @apply chip bg-ink-800 text-ink-300 border border-ink-700;
+  }
+
+  .input-range {
+    @apply w-full h-2 rounded-full appearance-none bg-ink-800 cursor-pointer;
+  }
+
+  .input-range::-webkit-slider-thumb {
+    @apply appearance-none w-5 h-5 rounded-full bg-cyan shadow-glow cursor-pointer transition-all hover:scale-110;
+  }
+
+  .input-range::-moz-range-thumb {
+    @apply w-5 h-5 rounded-full bg-cyan shadow-glow cursor-pointer border-0 transition-all hover:scale-110;
+  }
+
+  .shimmer-bg {
+    background: linear-gradient(
+      90deg,
+      rgba(51, 65, 85, 0.4) 0%,
+      rgba(34, 211, 238, 0.15) 50%,
+      rgba(51, 65, 85, 0.4) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+  }
+
+  .border-gradient {
+    position: relative;
+  }
+
+  .border-gradient::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(34, 211, 238, 0.5), transparent 50%, rgba(245, 158, 11, 0.3));
+    -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+}
