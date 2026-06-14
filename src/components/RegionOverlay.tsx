@@ -35,6 +35,14 @@ interface DrawState {
   currentY: number;
 }
 
+interface DisplayInfo {
+  displayWidth: number;
+  displayHeight: number;
+  offsetX: number;
+  offsetY: number;
+  scale: number;
+}
+
 export default function RegionOverlay({
   imageWidth,
   imageHeight,
@@ -47,58 +55,58 @@ export default function RegionOverlay({
 }: RegionOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const displayInfoRef = useRef<DisplayInfo>({
+    displayWidth: 0,
+    displayHeight: 0,
+    offsetX: 0,
+    offsetY: 0,
+    scale: 1,
+  });
   const [drawState, setDrawState] = useState<DrawState | null>(null);
-  const [scale, setScale] = useState(1);
-
-  const getCanvasCoords = useCallback(
-    (clientX: number, clientY: number) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return { x: 0, y: 0 };
-
-      const rect = canvas.getBoundingClientRect();
-      const x = (clientX - rect.left) / scale;
-      const y = (clientY - rect.top) / scale;
-
-      return {
-        x: Math.max(0, Math.min(imageWidth, x)),
-        y: Math.max(0, Math.min(imageHeight, y)),
-      };
-    },
-    [imageWidth, imageHeight, scale]
-  );
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
-    if (!canvas || !container) return;
+    if (!canvas || !container || imageWidth === 0 || imageHeight === 0) return;
 
     const dpr = window.devicePixelRatio || 1;
     const containerWidth = container.clientWidth;
     const containerHeight = container.clientHeight;
 
-    const newScale = Math.min(
+    if (containerWidth === 0 || containerHeight === 0) return;
+
+    const scale = Math.min(
       containerWidth / imageWidth,
       containerHeight / imageHeight
     );
-    setScale(newScale);
+    const displayWidth = imageWidth * scale;
+    const displayHeight = imageHeight * scale;
+    const offsetX = (containerWidth - displayWidth) / 2;
+    const offsetY = (containerHeight - displayHeight) / 2;
 
-    const displayWidth = imageWidth * newScale;
-    const displayHeight = imageHeight * newScale;
+    displayInfoRef.current = { displayWidth, displayHeight, offsetX, offsetY, scale };
 
-    canvas.width = imageWidth * dpr;
-    canvas.height = imageHeight * dpr;
+    canvas.width = displayWidth * dpr;
+    canvas.height = displayHeight * dpr;
     canvas.style.width = `${displayWidth}px`;
     canvas.style.height = `${displayHeight}px`;
+    canvas.style.left = `${offsetX}px`;
+    canvas.style.top = `${offsetY}px`;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, imageWidth, imageHeight);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, displayWidth, displayHeight);
 
     regions.forEach((region) => {
       const color = defectColors[region.type];
       const isSelected = region.id === selectedId;
+
+      const px = region.bbox.x * displayWidth;
+      const py = region.bbox.y * displayHeight;
+      const pw = region.bbox.width * displayWidth;
+      const ph = region.bbox.height * displayHeight;
 
       ctx.save();
       ctx.strokeStyle = color;
@@ -106,12 +114,7 @@ export default function RegionOverlay({
       ctx.fillStyle = `${color}${isSelected ? '33' : '1A'}`;
 
       ctx.beginPath();
-      ctx.rect(
-        region.bbox.x,
-        region.bbox.y,
-        region.bbox.width,
-        region.bbox.height
-      );
+      ctx.rect(px, py, pw, ph);
       ctx.fill();
       ctx.stroke();
 
@@ -122,29 +125,33 @@ export default function RegionOverlay({
       ctx.font = '12px system-ui';
       const labelWidth = ctx.measureText(labelText).width + labelPadding * 2;
 
+      const labelX = px;
+      const labelY = py > labelHeight ? py - labelHeight : py;
+
       ctx.fillStyle = color;
-      ctx.fillRect(
-        region.bbox.x,
-        region.bbox.y - labelHeight,
-        labelWidth,
-        labelHeight
-      );
+      ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
 
       ctx.fillStyle = '#020617';
       ctx.fillText(
         labelText,
-        region.bbox.x + labelPadding,
-        region.bbox.y - labelHeight / 2 + 4
+        labelX + labelPadding,
+        labelY + labelHeight / 2 + 4
       );
 
       ctx.restore();
     });
 
     if (drawState && drawState.isDrawing) {
-      const x = Math.min(drawState.startX, drawState.currentX);
-      const y = Math.min(drawState.startY, drawState.currentY);
-      const w = Math.abs(drawState.currentX - drawState.startX);
-      const h = Math.abs(drawState.currentY - drawState.startY);
+      const info = displayInfoRef.current;
+      const sx = (drawState.startX / imageWidth) * info.displayWidth;
+      const sy = (drawState.startY / imageHeight) * info.displayHeight;
+      const cx = (drawState.currentX / imageWidth) * info.displayWidth;
+      const cy = (drawState.currentY / imageHeight) * info.displayHeight;
+
+      const x = Math.min(sx, cx);
+      const y = Math.min(sy, cy);
+      const w = Math.abs(cx - sx);
+      const h = Math.abs(cy - sy);
 
       ctx.save();
       ctx.strokeStyle = defectColors.manual;
@@ -165,14 +172,46 @@ export default function RegionOverlay({
   }, [draw]);
 
   useEffect(() => {
-    const handleResize = () => draw();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    const container = containerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      draw();
+    });
+
+    resizeObserver.observe(container);
+
+    const handleWindowResize = () => draw();
+    window.addEventListener('resize', handleWindowResize);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', handleWindowResize);
+    };
   }, [draw]);
+
+  const getCanvasCoords = useCallback(
+    (clientX: number, clientY: number) => {
+      const canvas = canvasRef.current;
+      const info = displayInfoRef.current;
+      if (!canvas || info.displayWidth === 0) return { x: 0, y: 0 };
+
+      const rect = canvas.getBoundingClientRect();
+      const x = ((clientX - rect.left) / rect.width) * imageWidth;
+      const y = ((clientY - rect.top) / rect.height) * imageHeight;
+
+      return {
+        x: Math.max(0, Math.min(imageWidth, x)),
+        y: Math.max(0, Math.min(imageHeight, y)),
+      };
+    },
+    [imageWidth, imageHeight]
+  );
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if (!drawMode) return;
+      e.preventDefault();
       const coords = getCanvasCoords(e.clientX, e.clientY);
       setDrawState({
         isDrawing: true,
@@ -206,36 +245,48 @@ export default function RegionOverlay({
     const w = Math.abs(drawState.currentX - drawState.startX);
     const h = Math.abs(drawState.currentY - drawState.startY);
 
-    if (w > 5 && h > 5) {
-      onAddRegion({ x, y, width: w, height: h });
+    if (w > 1 && h > 1) {
+      const nx = Math.max(0, x / imageWidth);
+      const ny = Math.max(0, y / imageHeight);
+      const nw = Math.min(1 - nx, w / imageWidth);
+      const nh = Math.min(1 - ny, h / imageHeight);
+      onAddRegion({
+        x: nx,
+        y: ny,
+        width: nw,
+        height: nh,
+      });
     }
 
     setDrawState(null);
-  }, [drawState, onAddRegion]);
+  }, [drawState, onAddRegion, imageWidth, imageHeight]);
 
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent) => {
       if (drawMode) return;
 
       const coords = getCanvasCoords(e.clientX, e.clientY);
+      const nx = coords.x / imageWidth;
+      const ny = coords.y / imageHeight;
+
       const clickedRegion = regions.find((r) => {
         return (
-          coords.x >= r.bbox.x &&
-          coords.x <= r.bbox.x + r.bbox.width &&
-          coords.y >= r.bbox.y &&
-          coords.y <= r.bbox.y + r.bbox.height
+          nx >= r.bbox.x &&
+          nx <= r.bbox.x + r.bbox.width &&
+          ny >= r.bbox.y &&
+          ny <= r.bbox.y + r.bbox.height
         );
       });
 
       onSelectRegion(clickedRegion ? clickedRegion.id : null);
     },
-    [drawMode, regions, getCanvasCoords, onSelectRegion]
+    [drawMode, regions, getCanvasCoords, onSelectRegion, imageWidth, imageHeight]
   );
 
   return (
     <div
       ref={containerRef}
-      className="relative flex h-full w-full items-center justify-center"
+      className="absolute inset-0"
       style={{ cursor: drawMode ? 'crosshair' : 'pointer' }}
     >
       <canvas

@@ -105,7 +105,7 @@ export default function DownloadCenter() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex h-screen flex-col overflow-hidden">
       <Header
         leftContent={
           <button
@@ -124,12 +124,12 @@ export default function DownloadCenter() {
         }
       />
 
-      <div className="container flex flex-1 gap-6 py-6 lg:grid lg:grid-cols-1fr-[320px]">
-        <section className="glass-panel flex flex-col overflow-hidden p-4">
+      <div className="container flex flex-1 min-h-0 gap-6 py-6 lg:grid lg:grid-cols-1fr-[320px]">
+        <section className="glass-panel flex min-h-0 flex-col overflow-hidden p-4">
           <ImagePreview
-            src={image.previewUrl}
+            src={`/api/images/${image.id}/download?result=false`}
             alt={image.originalName}
-            resultSrc={image.resultUrl}
+            resultSrc={`/api/images/${image.id}/download?result=true`}
             showCompare={!!image.resultUrl}
           />
           <div className="mt-4 flex items-center justify-between text-sm text-ink-400">

@@ -216,7 +216,7 @@ export default function ImageEditor() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex h-screen flex-col overflow-hidden">
       <Header
         leftContent={
           <button
@@ -232,7 +232,7 @@ export default function ImageEditor() {
         }
       />
 
-      <div className="container flex flex-1 gap-6 py-6 lg:grid lg:grid-cols-[240px_1fr_280px]">
+      <div className="container flex flex-1 min-h-0 gap-6 py-6 lg:grid lg:grid-cols-[240px_1fr_280px]">
         <aside className="glass-panel flex flex-col gap-6 p-5">
           <div>
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-400">
@@ -319,10 +319,10 @@ export default function ImageEditor() {
           </div>
         </aside>
 
-        <section className="glass-panel flex flex-col overflow-hidden p-4">
+        <section className="glass-panel flex min-h-0 flex-col overflow-hidden p-4">
           {image && (
             <ImagePreview
-              src={image.previewUrl}
+              src={`/api/images/${image.id}/download?result=false`}
               alt={image.originalName}
             >
               {image.width > 0 && image.height > 0 && (
@@ -445,9 +445,9 @@ export default function ImageEditor() {
                       )}
                     </div>
                     <div className="mt-0.5 text-xs text-ink-500 font-mono">
-                      {Math.round(region.bbox.x)}×{Math.round(region.bbox.y)}
+                      {Math.round(region.bbox.x * image.width)}×{Math.round(region.bbox.y * image.height)}
                       {' · '}
-                      {Math.round(region.bbox.width)}×{Math.round(region.bbox.height)}
+                      {Math.round(region.bbox.width * image.width)}×{Math.round(region.bbox.height * image.height)}
                     </div>
                   </div>
                   <button

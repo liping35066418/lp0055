@@ -31,7 +31,7 @@ function toImageRecord(img: ReturnType<typeof TaskManager.getImage>): ImageRecor
     mimeType: img.mimeType,
     width: img.width,
     height: img.height,
-    previewUrl: `/api/images/${img.id}/download?format=webp&quality=60&scale=0.3`,
+    previewUrl: `/api/images/${img.id}/download?format=webp&quality=60&scale=0.3&result=false`,
     resultUrl: img.resultFilename ? `/api/images/${img.id}/download` : undefined,
     status: img.status,
     regions: img.regions,
@@ -61,8 +61,8 @@ function isValidBBox(bbox: BBox): boolean {
     y >= 0 && y <= 1 &&
     width > 0 && width <= 1 &&
     height > 0 && height <= 1 &&
-    x + width <= 1.001 &&
-    y + height <= 1.001
+    x + width <= 1.01 &&
+    y + height <= 1.01
   );
 }
 
@@ -118,7 +118,7 @@ export const uploadImage = async (
       mimeType: image.mimeType,
       width: image.width,
       height: image.height,
-      previewUrl: `/api/images/${image.id}/download?format=webp&quality=60&scale=0.3`,
+      previewUrl: `/api/images/${image.id}/download?format=webp&quality=60&scale=0.3&result=false`,
       createdAt: image.createdAt,
     };
 

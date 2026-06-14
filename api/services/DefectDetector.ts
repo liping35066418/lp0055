@@ -17,11 +17,15 @@ interface AbsoluteBBox {
 }
 
 function normalizeBBox(bbox: AbsoluteBBox, width: number, height: number): BBox {
+  const x = Math.max(0, bbox.x1 / width);
+  const y = Math.max(0, bbox.y1 / height);
+  const w = Math.min(1 - x, (bbox.x2 - bbox.x1) / width);
+  const h = Math.min(1 - y, (bbox.y2 - bbox.y1) / height);
   return {
-    x: Math.max(0, bbox.x1 / width),
-    y: Math.max(0, bbox.y1 / height),
-    width: Math.min(1, (bbox.x2 - bbox.x1) / width),
-    height: Math.min(1, (bbox.y2 - bbox.y1) / height),
+    x,
+    y,
+    width: Math.max(0, w),
+    height: Math.max(0, h),
   };
 }
 
@@ -104,7 +108,7 @@ function connectedComponents(mask: Uint8Array, width: number, height: number): n
   return components;
 }
 
-function bboxFromComponent(component: number[], width: number): AbsoluteBBox {
+function bboxFromComponent(component: number[], width: number, height: number): AbsoluteBBox {
   let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
   for (const idx of component) {
     const x = idx % width;
@@ -119,7 +123,7 @@ function bboxFromComponent(component: number[], width: number): AbsoluteBBox {
     x1: Math.max(0, x1 - pad),
     y1: Math.max(0, y1 - pad),
     x2: Math.min(width - 1, x2 + pad),
-    y2: Math.min(Infinity, y2 + pad),
+    y2: Math.min(height - 1, y2 + pad),
   };
 }
 
@@ -260,7 +264,7 @@ class DefectDetectorService {
     const candidateRegions: { bbox: AbsoluteBBox; confidence: number; type: DefectType }[] = [];
 
     for (const component of components) {
-      const absBbox = bboxFromComponent(component, dw);
+      const absBbox = bboxFromComponent(component, dw, dh);
       const realBbox: AbsoluteBBox = {
         x1: absBbox.x1 * downscale,
         y1: absBbox.y1 * downscale,
@@ -381,7 +385,7 @@ class DefectDetectorService {
     const candidateRegions: { bbox: AbsoluteBBox; confidence: number; type: DefectType }[] = [];
 
     for (const component of components) {
-      const absBbox = bboxFromComponent(component, dw);
+      const absBbox = bboxFromComponent(component, dw, dh);
       const realBbox: AbsoluteBBox = {
         x1: absBbox.x1 * downscale,
         y1: absBbox.y1 * downscale,
@@ -509,7 +513,7 @@ class DefectDetectorService {
     const candidateRegions: { bbox: AbsoluteBBox; confidence: number; type: DefectType }[] = [];
 
     for (const component of components) {
-      const absBbox = bboxFromComponent(component, dw);
+      const absBbox = bboxFromComponent(component, dw, dh);
       const realBbox: AbsoluteBBox = {
         x1: absBbox.x1 * downscale,
         y1: absBbox.y1 * downscale,

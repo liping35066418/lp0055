@@ -112,12 +112,13 @@ export default function ImagePreview({
   }, [resultSrc]);
 
   return (
-    <div className="flex h-full w-full flex-col">
+    <div className="flex min-h-0 w-full flex-1 flex-col">
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <button
             onClick={handleZoomOut}
-            className="btn-ghost flex h-9 w-9 items-center justify-center p-0"
+            disabled={showCompare}
+            className="btn-ghost flex h-9 w-9 items-center justify-center p-0 disabled:opacity-50 disabled:cursor-not-allowed"
             title="缩小"
           >
             <ZoomOut size={18} strokeWidth={2} />
@@ -127,14 +128,16 @@ export default function ImagePreview({
           </span>
           <button
             onClick={handleZoomIn}
-            className="btn-ghost flex h-9 w-9 items-center justify-center p-0"
+            disabled={showCompare}
+            className="btn-ghost flex h-9 w-9 items-center justify-center p-0 disabled:opacity-50 disabled:cursor-not-allowed"
             title="放大"
           >
             <ZoomIn size={18} strokeWidth={2} />
           </button>
           <button
             onClick={handleReset}
-            className="btn-ghost flex h-9 w-9 items-center justify-center p-0"
+            disabled={showCompare}
+            className="btn-ghost flex h-9 w-9 items-center justify-center p-0 disabled:opacity-50 disabled:cursor-not-allowed"
             title="重置"
           >
             <RefreshCw size={18} strokeWidth={2} />
@@ -176,26 +179,24 @@ export default function ImagePreview({
               }}
               draggable={false}
             />
-            {resultLoaded && (
-              <div
-                className="absolute inset-0 overflow-hidden"
+            <div
+              className="absolute inset-0 overflow-hidden"
+              style={{
+                clipPath: `inset(0 0 0 ${sliderPos}%)`,
+              }}
+            >
+              <img
+                src={resultSrc}
+                alt={`${alt} - 修复后`}
+                onLoad={() => setResultLoaded(true)}
+                className="absolute inset-0 h-full w-full object-contain"
                 style={{
-                  clipPath: `inset(0 ${100 - sliderPos}% 0 0)`,
+                  transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
+                  transformOrigin: 'center center',
                 }}
-              >
-                <img
-                  src={resultSrc}
-                  alt={`${alt} - 修复后`}
-                  onLoad={() => setResultLoaded(true)}
-                  className="absolute inset-0 h-full w-full object-contain"
-                  style={{
-                    transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
-                    transformOrigin: 'center center',
-                  }}
-                  draggable={false}
-                />
-              </div>
-            )}
+                draggable={false}
+              />
+            </div>
             <div
               className="absolute inset-y-0 z-20 w-1 cursor-ew-resize bg-cyan shadow-glow"
               style={{ left: `${sliderPos}%`, transform: 'translateX(-50%)' }}
@@ -231,7 +232,11 @@ export default function ImagePreview({
           />
         )}
 
-        {children}
+        {children && (
+          <div className="absolute inset-0 z-10">
+            {children}
+          </div>
+        )}
       </div>
     </div>
   );
