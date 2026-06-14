@@ -16,6 +16,7 @@ export interface DetectionRegion {
   type: DefectType;
   confidence: number;
   bbox: BBox;
+  strength?: number;
 }
 
 export interface UploadImageResponse {
@@ -57,12 +58,21 @@ export interface RepairProgress {
   resultUrl?: string;
   resultWidth?: number;
   resultHeight?: number;
+  versions?: RepairVersion[];
+  currentVersion?: number;
 }
 
 export interface DownloadOptions {
   format: 'png' | 'jpg' | 'webp' | 'tiff';
   quality: number;
   scale: number;
+}
+
+export interface RepairVersion {
+  version: number;
+  resultFilename: string;
+  repairedRegionIds: string[];
+  createdAt: number;
 }
 
 export interface ImageRecord {
@@ -80,6 +90,8 @@ export interface ImageRecord {
   mode?: RepairMode;
   createdAt: number;
   completedAt?: number;
+  versions?: RepairVersion[];
+  currentVersion?: number;
 }
 
 export interface ApiError {

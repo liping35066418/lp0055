@@ -37,6 +37,8 @@ function toImageRecord(img: ReturnType<typeof TaskManager.getImage>): ImageRecor
     regions: img.regions,
     createdAt: img.createdAt,
     completedAt: img.completedAt,
+    versions: img.versions,
+    currentVersion: img.currentVersion,
   };
 }
 
@@ -46,6 +48,7 @@ function normalizeRepairRegions(inputs: RepairRegionInput[]): DetectionRegion[] 
     type: (input.type || 'manual') as DefectType,
     confidence: 0.9,
     bbox: input.bbox,
+    strength: input.strength,
   }));
 }
 
@@ -296,6 +299,7 @@ export const downloadImage = async (
     const format = (req.query.format as string) || 'png';
     const quality = parseInt(req.query.quality as string) || 90;
     const scale = parseFloat(req.query.scale as string) || 1;
+    const versionParam = req.query.version;
 
     if (!['png', 'jpg', 'webp', 'tiff'].includes(format)) {
       throw new AppError(400, 'INVALID_FORMAT', `不支持的输出格式: ${format}`);
@@ -312,10 +316,21 @@ export const downloadImage = async (
     let sourceFilename = image.filename;
     let sourceDir: 'uploads' | 'outputs' = 'uploads';
 
-    const useResult = req.query.result !== 'false' && image.resultFilename;
-    if (useResult && FileStorage.fileExists('outputs', image.resultFilename)) {
-      sourceFilename = image.resultFilename;
-      sourceDir = 'outputs';
+    if (versionParam !== undefined) {
+      const versionNum = parseInt(versionParam as string);
+      if (!isNaN(versionNum) && versionNum > 0 && image.versions) {
+        const targetVersion = image.versions.find((v) => v.version === versionNum);
+        if (targetVersion && FileStorage.fileExists('outputs', targetVersion.resultFilename)) {
+          sourceFilename = targetVersion.resultFilename;
+          sourceDir = 'outputs';
+        }
+      }
+    } else {
+      const useResult = req.query.result !== 'false' && image.resultFilename;
+      if (useResult && FileStorage.fileExists('outputs', image.resultFilename)) {
+        sourceFilename = image.resultFilename;
+        sourceDir = 'outputs';
+      }
     }
 
     if (!FileStorage.fileExists(sourceDir, sourceFilename)) {
@@ -416,7 +431,11 @@ export const deleteImage = async (
     if (image.filename) {
       await FileStorage.deleteFile('uploads', image.filename);
     }
-    if (image.resultFilename) {
+    if (image.versions && image.versions.length > 0) {
+      for (const v of image.versions) {
+        await FileStorage.deleteFile('outputs', v.resultFilename);
+      }
+    } else if (image.resultFilename) {
       await FileStorage.deleteFile('outputs', image.resultFilename);
     }
 
@@ -428,6 +447,38 @@ export const deleteImage = async (
         message: '删除成功',
         imageId: id,
       },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const undoRepair = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const image = TaskManager.getImage(id);
+
+    if (!image) {
+      throw new AppError(404, 'NOT_FOUND', '图片不存在');
+    }
+
+    if (!image.versions || image.versions.length === 0) {
+      throw new AppError(400, 'NO_VERSION', '没有可撤销的修复版本');
+    }
+
+    const updated = TaskManager.undoRepair(id);
+    if (!updated) {
+      throw new AppError(500, 'UNDO_FAILED', '撤销失败');
+    }
+
+    const record = toImageRecord(updated);
+    res.status(200).json({
+      success: true,
+      data: record,
     });
   } catch (err) {
     next(err);

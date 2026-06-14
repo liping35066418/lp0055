@@ -81,6 +81,8 @@ export const useAppStore = create<AppStoreState>((set) => ({
         progress: progress.progress,
         message: progress.message,
         resultUrl: progress.resultUrl,
+        versions: progress.versions,
+        currentVersion: progress.currentVersion,
       };
 
       const updates: Partial<AppStoreState> = {
@@ -103,6 +105,12 @@ export const useAppStore = create<AppStoreState>((set) => ({
           imageUpdates.completedAt = Date.now();
         } else if (progress.stage === 'error') {
           imageUpdates.status = 'error';
+        }
+        if (progress.versions !== undefined) {
+          imageUpdates.versions = progress.versions;
+        }
+        if (progress.currentVersion !== undefined) {
+          imageUpdates.currentVersion = progress.currentVersion;
         }
         if (Object.keys(imageUpdates).length > 0) {
           updates.images = state.images.map((img) =>

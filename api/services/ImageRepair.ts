@@ -452,27 +452,38 @@ class ImageRepairService {
 
     let current = sharp(imageBuffer);
 
+    const getRegionStrength = (region: DetectionRegion): number => {
+      if (typeof region.strength === 'number') {
+        return Math.max(0.3, Math.min(1, region.strength));
+      }
+      return region.confidence > 0.7 ? 0.8 : 0.6;
+    };
+
     if (mode === 'light-watermark' || (mode === 'auto' && regions.some((r) => r.type === 'watermark'))) {
       const watermarks = regions.filter((r) => r.type === 'watermark');
       for (const region of watermarks) {
-        current = await this.inpaintLightWatermark(current, region.bbox);
+        const strength = getRegionStrength(region);
+        if (strength >= 0.7) {
+          current = await this.inpaintLightWatermark(current, region.bbox);
+        } else {
+          current = await this.processRegion(current, region.bbox, strength);
+        }
       }
       const remaining = regions.filter((r) => r.type !== 'watermark');
       if (remaining.length > 0) {
-        if (remaining.length > 5) {
-          current = await this.inpaintDenseDefects(current, remaining.map((r) => r.bbox));
-        } else {
-          for (const region of remaining) {
-            const strength = region.confidence > 0.7 ? 0.8 : 0.6;
-            current = await this.processRegion(current, region.bbox, strength);
-          }
+        for (const region of remaining) {
+          const strength = getRegionStrength(region);
+          current = await this.processRegion(current, region.bbox, strength);
         }
       }
     } else if (mode === 'dense-defects' || (mode === 'auto' && regions.length > 5)) {
-      current = await this.inpaintDenseDefects(current, regions.map((r) => r.bbox));
+      for (const region of regions) {
+        const strength = getRegionStrength(region);
+        current = await this.processRegion(current, region.bbox, strength);
+      }
     } else {
       for (const region of regions) {
-        const strength = region.confidence > 0.7 ? 0.8 : 0.6;
+        const strength = getRegionStrength(region);
         current = await this.processRegion(current, region.bbox, strength);
       }
     }

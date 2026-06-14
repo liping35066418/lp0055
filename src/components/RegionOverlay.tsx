@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import type { DetectionRegion, DefectType, BBox } from '@/types';
 
@@ -6,8 +6,9 @@ interface RegionOverlayProps {
   imageWidth: number;
   imageHeight: number;
   regions: DetectionRegion[];
-  selectedId: string | null;
-  onSelectRegion: (id: string | null) => void;
+  selectedIds: string[];
+  onToggleRegion: (id: string, additive: boolean) => void;
+  onClearSelection: () => void;
   onAddRegion: (bbox: BBox) => void;
   onRemoveRegion: (id: string) => void;
   drawMode: boolean;
@@ -47,8 +48,9 @@ export default function RegionOverlay({
   imageWidth,
   imageHeight,
   regions,
-  selectedId,
-  onSelectRegion,
+  selectedIds,
+  onToggleRegion,
+  onClearSelection,
   onAddRegion,
   onRemoveRegion,
   drawMode,
@@ -63,6 +65,8 @@ export default function RegionOverlay({
     scale: 1,
   });
   const [drawState, setDrawState] = useState<DrawState | null>(null);
+
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -101,7 +105,7 @@ export default function RegionOverlay({
 
     regions.forEach((region) => {
       const color = defectColors[region.type];
-      const isSelected = region.id === selectedId;
+      const isSelected = selectedSet.has(region.id);
 
       const px = region.bbox.x * displayWidth;
       const py = region.bbox.y * displayHeight;
@@ -111,7 +115,7 @@ export default function RegionOverlay({
       ctx.save();
       ctx.strokeStyle = color;
       ctx.lineWidth = isSelected ? 3 : 2;
-      ctx.fillStyle = `${color}${isSelected ? '33' : '1A'}`;
+      ctx.fillStyle = `${color}${isSelected ? '40' : '1A'}`;
 
       ctx.beginPath();
       ctx.rect(px, py, pw, ph);
@@ -165,7 +169,7 @@ export default function RegionOverlay({
       ctx.stroke();
       ctx.restore();
     }
-  }, [imageWidth, imageHeight, regions, selectedId, drawState]);
+  }, [imageWidth, imageHeight, regions, selectedSet, drawState]);
 
   useEffect(() => {
     draw();
@@ -265,6 +269,8 @@ export default function RegionOverlay({
     (e: React.MouseEvent) => {
       if (drawMode) return;
 
+      const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+
       const coords = getCanvasCoords(e.clientX, e.clientY);
       const nx = coords.x / imageWidth;
       const ny = coords.y / imageHeight;
@@ -278,9 +284,13 @@ export default function RegionOverlay({
         );
       });
 
-      onSelectRegion(clickedRegion ? clickedRegion.id : null);
+      if (clickedRegion) {
+        onToggleRegion(clickedRegion.id, additive);
+      } else if (!additive) {
+        onClearSelection();
+      }
     },
-    [drawMode, regions, getCanvasCoords, onSelectRegion, imageWidth, imageHeight]
+    [drawMode, regions, getCanvasCoords, onToggleRegion, onClearSelection, imageWidth, imageHeight]
   );
 
   return (
@@ -298,13 +308,15 @@ export default function RegionOverlay({
         onClick={handleCanvasClick}
         className="absolute z-10"
       />
-      {selectedId && !drawMode && (
+      {selectedIds.length > 0 && !drawMode && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            onRemoveRegion(selectedId);
+            selectedIds.forEach((id) => onRemoveRegion(id));
+            onClearSelection();
           }}
           className="absolute right-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition-all hover:bg-red-600"
+          title={`删除选中的 ${selectedIds.length} 个区域`}
         >
           <X size={20} strokeWidth={2} />
         </button>

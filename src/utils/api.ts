@@ -123,14 +123,24 @@ export function downloadImageUrl(
   imageId: string,
   format: 'png' | 'jpg' | 'webp' | 'tiff' = 'png',
   quality: number = 100,
-  scale: number = 1
+  scale: number = 1,
+  version?: number
 ): string {
   const params = new URLSearchParams({
     format,
     quality: String(quality),
     scale: String(scale),
   });
+  if (version !== undefined && version > 0) {
+    params.set('version', String(version));
+  }
   return `${BASE_URL}/images/${imageId}/download?${params.toString()}`;
+}
+
+export function undoRepair(imageId: string): Promise<ImageRecord> {
+  return request<ImageRecord>(`/images/${imageId}/undo`, {
+    method: 'POST',
+  });
 }
 
 export function getHistory(): Promise<ImageRecord[]> {

@@ -9,6 +9,7 @@ import {
   downloadImage,
   getHistory,
   deleteImage,
+  undoRepair,
 } from '../controllers/imageController.js';
 import { repairLimiter } from '../middleware/rateLimiter.js';
 
@@ -29,6 +30,7 @@ router.post('/images/:id/detect', detectDefects);
 router.post('/images/:id/repair', repairLimiter, startRepair);
 router.get('/tasks/:taskId/progress', getProgress);
 router.get('/images/:id/download', downloadImage);
+router.post('/images/:id/undo', undoRepair);
 router.delete('/images/:id', deleteImage);
 
 export default router;

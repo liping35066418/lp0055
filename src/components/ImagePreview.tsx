@@ -112,7 +112,7 @@ export default function ImagePreview({
   }, [resultSrc]);
 
   return (
-    <div className="flex min-h-0 w-full flex-1 flex-col">
+    <div className="flex h-0 w-full flex-1 flex-col">
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <button
@@ -153,7 +153,7 @@ export default function ImagePreview({
 
       <div
         ref={containerRef}
-        className="relative flex-1 overflow-hidden rounded-2xl border border-ink-700 bg-ink-900"
+        className="relative h-0 flex-1 overflow-hidden rounded-2xl border border-ink-700 bg-ink-900"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}

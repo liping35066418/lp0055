@@ -18,9 +18,34 @@ class TaskManagerService {
       id,
       status: 'uploaded',
       createdAt: Date.now(),
+      versions: [],
+      currentVersion: 0,
     };
     this.images.set(id, record);
     return record;
+  }
+
+  undoRepair(imageId: string): ImageFile | undefined {
+    const image = this.images.get(imageId);
+    if (!image || !image.versions || image.versions.length === 0) return undefined;
+
+    const versions = [...image.versions];
+    versions.pop();
+    const currentVersion = versions.length;
+    const resultFilename = versions.length > 0
+      ? versions[versions.length - 1].resultFilename
+      : undefined;
+
+    const updated: ImageFile = {
+      ...image,
+      versions,
+      currentVersion,
+      resultFilename,
+      status: versions.length > 0 ? 'completed' : 'detected',
+      completedAt: versions.length > 0 ? versions[versions.length - 1].createdAt : undefined,
+    };
+    this.images.set(imageId, updated);
+    return updated;
   }
 
   getImage(id: string): ImageFile | undefined {
@@ -78,6 +103,8 @@ class TaskManagerService {
     }
     task.listeners.add(listener);
 
+    const image = this.images.get(task.imageId);
+
     const currentProgress: RepairProgress = {
       taskId: task.id,
       stage: task.stage,
@@ -86,6 +113,8 @@ class TaskManagerService {
       resultUrl: task.resultFilename ? `/api/images/${task.imageId}/download` : undefined,
       resultWidth: task.resultWidth,
       resultHeight: task.resultHeight,
+      versions: image?.versions,
+      currentVersion: image?.currentVersion,
     };
     listener(currentProgress);
 
@@ -113,6 +142,8 @@ class TaskManagerService {
       Object.assign(task, extra);
     }
 
+    const image = this.images.get(task.imageId);
+
     const progressEvent: RepairProgress = {
       taskId: task.id,
       stage: task.stage,
@@ -121,6 +152,8 @@ class TaskManagerService {
       resultUrl: task.resultFilename ? `/api/images/${task.imageId}/download` : undefined,
       resultWidth: task.resultWidth,
       resultHeight: task.resultHeight,
+      versions: image?.versions,
+      currentVersion: image?.currentVersion,
     };
 
     for (const listener of task.listeners) {
@@ -167,24 +200,36 @@ class TaskManagerService {
     this.updateImage(image.id, { status: 'repairing' });
 
     try {
-      const imageBuffer = await FileStorage.readFile('uploads', image.filename);
+      const hasPreviousVersion =
+        image.versions && image.versions.length > 0 && image.resultFilename;
 
-      const totalSteps = detectRegions.length > 0 ? detectRegions.length : 1;
-      let currentStep = 0;
+      const sourceDir: 'uploads' | 'outputs' = hasPreviousVersion ? 'outputs' : 'uploads';
+      const sourceFilename: string = hasPreviousVersion ? image.resultFilename! : image.filename;
+      const sourceBuffer: Buffer = await FileStorage.readFile(sourceDir, sourceFilename);
 
-      const repairResult = await ImageRepair.repairImage(imageBuffer, detectRegions, mode);
+      const repairResult = await ImageRepair.repairImage(sourceBuffer, detectRegions, mode);
 
       this.updateTaskProgress(taskId, 'refining', 80, '正在优化修复效果...');
 
-      const resultFilename = FileStorage.generateUniqueFilename(`repaired_${image.filename}`);
+      const versionNum = (image.versions?.length || 0) + 1;
+      const resultFilename = FileStorage.generateUniqueFilename(`v${versionNum}_${image.filename}`);
       const pngFilename = resultFilename.replace(/\.[^.]+$/, '.png');
       await FileStorage.saveFile('outputs', pngFilename, repairResult.buffer);
+
+      const newVersion = {
+        version: versionNum,
+        resultFilename: pngFilename,
+        repairedRegionIds: detectRegions.map((r) => r.id),
+        createdAt: Date.now(),
+      };
+
+      const newVersions = [...(image.versions || []), newVersion];
 
       this.updateTaskProgress(
         taskId,
         'completed',
         100,
-        '修复完成！',
+        `修复完成！版本 v${versionNum}`,
         {
           resultFilename: pngFilename,
           resultWidth: repairResult.width,
@@ -196,6 +241,8 @@ class TaskManagerService {
         status: 'completed',
         resultFilename: pngFilename,
         completedAt: Date.now(),
+        versions: newVersions,
+        currentVersion: versionNum,
       });
     } catch (err) {
       console.error('[TaskManager] Repair error:', err);

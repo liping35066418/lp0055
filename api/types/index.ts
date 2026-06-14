@@ -28,4 +28,6 @@ export interface ImageFile {
   resultFilename?: string;
   createdAt: number;
   completedAt?: number;
+  versions?: import('../../shared/types').RepairVersion[];
+  currentVersion?: number;
 }

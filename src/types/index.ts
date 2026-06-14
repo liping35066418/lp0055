@@ -9,6 +9,8 @@ export interface ProcessingTask {
   progress: number;
   message: string;
   resultUrl?: string;
+  versions?: RepairProgress['versions'];
+  currentVersion?: number;
 }
 
 export interface AppState {

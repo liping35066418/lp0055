@@ -8,6 +8,10 @@ import {
   Wand2,
   Loader2,
   X,
+  Undo2,
+  Download,
+  CheckSquare,
+  Square as SquareIcon,
 } from 'lucide-react';
 import Header from '@/components/Header';
 import ImagePreview from '@/components/ImagePreview';
@@ -18,6 +22,8 @@ import {
   detectDefects,
   startRepair,
   subscribeProgress,
+  undoRepair,
+  downloadImageUrl,
 } from '@/utils/api';
 import type {
   DetectionRegion,
@@ -59,6 +65,8 @@ const stageLabels: Record<string, string> = {
   error: '出错',
 };
 
+const DEFAULT_STRENGTH = 70;
+
 export default function ImageEditor() {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -68,12 +76,12 @@ export default function ImageEditor() {
   const image = images.find((img) => img.id === id);
 
   const [regions, setRegions] = useState<DetectionRegion[]>([]);
-  const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
+  const [selectedRegionIds, setSelectedRegionIds] = useState<string[]>([]);
   const [mode, setMode] = useState<RepairMode>('auto');
   const [drawMode, setDrawMode] = useState(false);
-  const [strength, setStrength] = useState(70);
   const [isDetecting, setIsDetecting] = useState(false);
   const [isRepairing, setIsRepairing] = useState(false);
+  const [isUndoing, setIsUndoing] = useState(false);
   const [repairProgress, setRepairProgress] = useState(0);
   const [repairStage, setRepairStage] = useState('');
   const [repairMessage, setRepairMessage] = useState('');
@@ -81,7 +89,12 @@ export default function ImageEditor() {
 
   useEffect(() => {
     if (image && image.regions) {
-      setRegions(image.regions);
+      setRegions(
+        image.regions.map((r) => ({
+          ...r,
+          strength: r.strength ?? DEFAULT_STRENGTH / 100,
+        }))
+      );
     }
   }, [image]);
 
@@ -92,10 +105,14 @@ export default function ImageEditor() {
     try {
       updateImage(image.id, { status: 'detecting' });
       const result = await detectDefects(image.id);
-      setRegions(result.regions);
+      const regionsWithStrength = result.regions.map((r) => ({
+        ...r,
+        strength: DEFAULT_STRENGTH / 100,
+      }));
+      setRegions(regionsWithStrength);
       updateImage(image.id, {
         status: 'detected',
-        regions: result.regions,
+        regions: regionsWithStrength,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : '检测失败');
@@ -111,6 +128,35 @@ export default function ImageEditor() {
     }
   }, [image, isDetecting, runDetection]);
 
+  const handleToggleRegion = useCallback((regionId: string, additive: boolean) => {
+    setSelectedRegionIds((prev) => {
+      if (additive) {
+        if (prev.includes(regionId)) {
+          return prev.filter((id) => id !== regionId);
+        }
+        return [...prev, regionId];
+      }
+      if (prev.length === 1 && prev[0] === regionId) {
+        return [];
+      }
+      return [regionId];
+    });
+  }, []);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedRegionIds([]);
+  }, []);
+
+  const handleSelectAll = useCallback(() => {
+    setSelectedRegionIds(regions.map((r) => r.id));
+  }, [regions]);
+
+  const handleInvertSelection = useCallback(() => {
+    setSelectedRegionIds(
+      regions.filter((r) => !selectedRegionIds.includes(r.id)).map((r) => r.id)
+    );
+  }, [regions, selectedRegionIds]);
+
   const handleAddRegion = useCallback(
     (bbox: BBox) => {
       const newRegion: DetectionRegion = {
@@ -118,8 +164,10 @@ export default function ImageEditor() {
         type: 'manual',
         confidence: 1,
         bbox,
+        strength: DEFAULT_STRENGTH / 100,
       };
       setRegions((prev) => [...prev, newRegion]);
+      setSelectedRegionIds([newRegion.id]);
       setDrawMode(false);
     },
     []
@@ -127,16 +175,34 @@ export default function ImageEditor() {
 
   const handleRemoveRegion = useCallback((regionId: string) => {
     setRegions((prev) => prev.filter((r) => r.id !== regionId));
-    setSelectedRegionId(null);
+    setSelectedRegionIds((prev) => prev.filter((id) => id !== regionId));
   }, []);
 
   const handleClearAll = useCallback(() => {
     setRegions([]);
-    setSelectedRegionId(null);
+    setSelectedRegionIds([]);
   }, []);
 
+  const handleRegionStrengthChange = useCallback((regionId: string, strength: number) => {
+    setRegions((prev) =>
+      prev.map((r) => (r.id === regionId ? { ...r, strength } : r))
+    );
+  }, []);
+
+  const handleSetAllStrength = useCallback(
+    (strength: number) => {
+      if (selectedRegionIds.length === 0) return;
+      setRegions((prev) =>
+        prev.map((r) =>
+          selectedRegionIds.includes(r.id) ? { ...r, strength } : r
+        )
+      );
+    },
+    [selectedRegionIds]
+  );
+
   const handleStartRepair = useCallback(async () => {
-    if (!image || regions.length === 0 || isRepairing) return;
+    if (!image || selectedRegionIds.length === 0 || isRepairing) return;
 
     setIsRepairing(true);
     setError(null);
@@ -145,11 +211,14 @@ export default function ImageEditor() {
     setRepairMessage('任务已排队...');
 
     try {
-      const repairRegions = regions.map((r) => ({
+      const selectedRegions = regions.filter((r) =>
+        selectedRegionIds.includes(r.id)
+      );
+      const repairRegions = selectedRegions.map((r) => ({
         id: r.id,
         type: r.type,
         bbox: r.bbox,
-        strength: strength / 100,
+        strength: r.strength ?? DEFAULT_STRENGTH / 100,
       }));
 
       const { taskId } = await startRepair(image.id, repairRegions, mode);
@@ -164,7 +233,6 @@ export default function ImageEditor() {
         if (progress.stage === 'completed') {
           clearTask(taskId);
           setIsRepairing(false);
-          navigate(`/download/${image.id}`);
         } else if (progress.stage === 'error') {
           clearTask(taskId);
           setIsRepairing(false);
@@ -175,7 +243,51 @@ export default function ImageEditor() {
       setIsRepairing(false);
       setError(e instanceof Error ? e.message : '修复失败');
     }
-  }, [image, regions, mode, strength, isRepairing, startTask, updateTaskProgress, clearTask, navigate]);
+  }, [image, regions, selectedRegionIds, mode, isRepairing, startTask, updateTaskProgress, clearTask]);
+
+  const handleUndo = useCallback(async () => {
+    if (!image || isUndoing || isRepairing) return;
+    if (!image.versions || image.versions.length === 0) return;
+
+    setIsUndoing(true);
+    setError(null);
+    try {
+      const updated = await undoRepair(image.id);
+      updateImage(image.id, {
+        status: updated.status,
+        resultUrl: updated.resultUrl,
+        versions: updated.versions,
+        currentVersion: updated.currentVersion,
+        completedAt: updated.completedAt,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '撤销失败');
+    } finally {
+      setIsUndoing(false);
+    }
+  }, [image, isUndoing, isRepairing, updateImage]);
+
+  const handleDownload = useCallback(() => {
+    if (!image) return;
+    const version = image.currentVersion && image.currentVersion > 0
+      ? image.currentVersion
+      : undefined;
+    const url = downloadImageUrl(image.id, 'png', 100, 1, version);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `repaired_${image.originalName.replace(/\.[^/.]+$/, '')}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [image]);
+
+  const previewSrc = useMemo(() => {
+    if (!image) return '';
+    if (image.currentVersion && image.currentVersion > 0 && image.resultUrl) {
+      return downloadImageUrl(image.id, 'webp', 85, 1, image.currentVersion);
+    }
+    return `/api/images/${image.id}/download?result=false`;
+  }, [image]);
 
   const defectStats = useMemo(() => {
     const stats: Record<DefectType, number> = {
@@ -189,6 +301,8 @@ export default function ImageEditor() {
     });
     return stats;
   }, [regions]);
+
+  const canUndo = !!(image?.versions && image.versions.length > 0 && !isRepairing && !isUndoing);
 
   if (!image) {
     return (
@@ -216,7 +330,7 @@ export default function ImageEditor() {
   }
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden">
+    <div className="flex h-screen flex-col">
       <Header
         leftContent={
           <button
@@ -228,12 +342,45 @@ export default function ImageEditor() {
           </button>
         }
         centerContent={
-          <span className="font-medium text-ink-100">{image.originalName}</span>
+          <div className="flex items-center gap-3">
+            <span className="font-medium text-ink-100">{image.originalName}</span>
+            {image.currentVersion && image.currentVersion > 0 && (
+              <span className="chip-active text-xs">
+                v{image.currentVersion}
+              </span>
+            )}
+          </div>
+        }
+        rightContent={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleUndo}
+              disabled={!canUndo}
+              className="btn-secondary flex h-9 items-center gap-2 px-3"
+              title="撤销上一次修复"
+            >
+              {isUndoing ? (
+                <Loader2 size={16} strokeWidth={2} className="animate-spin" />
+              ) : (
+                <Undo2 size={16} strokeWidth={2} />
+              )}
+              撤销
+            </button>
+            <button
+              onClick={handleDownload}
+              disabled={!image.resultUrl || isRepairing}
+              className="btn-secondary flex h-9 items-center gap-2 px-3"
+              title="下载当前版本"
+            >
+              <Download size={16} strokeWidth={2} />
+              下载
+            </button>
+          </div>
         }
       />
 
-      <div className="container flex flex-1 min-h-0 gap-6 py-6 lg:grid lg:grid-cols-[240px_1fr_280px]">
-        <aside className="glass-panel flex flex-col gap-6 p-5">
+      <div className="flex flex-1 min-h-0 gap-6 p-6">
+        <aside className="glass-panel w-[280px] shrink-0 min-h-0 flex flex-col gap-5 overflow-y-auto p-5">
           <div>
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-400">
               修复模式
@@ -243,11 +390,12 @@ export default function ImageEditor() {
                 <button
                   key={opt.value}
                   onClick={() => setMode(opt.value)}
+                  disabled={isRepairing}
                   className={`w-full rounded-xl border p-3 text-left transition-all duration-200 ${
                     mode === opt.value
                       ? 'border-cyan/50 bg-cyan/10 text-ink-50'
                       : 'border-ink-700 bg-transparent text-ink-300 hover:border-ink-600'
-                  }`}
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   <div className="font-medium text-sm">{opt.label}</div>
                   <div className="text-xs text-ink-400">{opt.description}</div>
@@ -285,6 +433,26 @@ export default function ImageEditor() {
                 <Square size={18} strokeWidth={2} />
                 {drawMode ? '绘制中...' : '矩形框选'}
               </button>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  onClick={handleSelectAll}
+                  disabled={isRepairing || regions.length === 0}
+                  className="btn-secondary flex items-center justify-center gap-1.5 py-2 text-sm"
+                >
+                  <CheckSquare size={16} strokeWidth={2} />
+                  全选
+                </button>
+                <button
+                  onClick={handleInvertSelection}
+                  disabled={isRepairing || regions.length === 0}
+                  className="btn-secondary flex items-center justify-center gap-1.5 py-2 text-sm"
+                >
+                  <SquareIcon size={16} strokeWidth={2} />
+                  反选
+                </button>
+              </div>
+
               <button
                 onClick={handleClearAll}
                 disabled={isRepairing || regions.length === 0}
@@ -296,42 +464,64 @@ export default function ImageEditor() {
             </div>
           </div>
 
-          <div>
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-400">
-              修复强度
-            </h3>
-            <div className="space-y-2">
-              <input
-                type="range"
-                min={30}
-                max={100}
-                value={strength}
-                onChange={(e) => setStrength(Number(e.target.value))}
-                disabled={isRepairing}
-                className="input-range"
-              />
-              <div className="flex justify-between text-xs text-ink-400">
-                <span>30%</span>
-                <span className="font-mono font-medium text-cyan">{strength}%</span>
-                <span>100%</span>
+          {selectedRegionIds.length > 0 && (
+            <div>
+              <h3 className="mb-3 flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-ink-400">
+                <span>选中区域强度</span>
+                <span className="font-mono text-ink-500">{selectedRegionIds.length} 个</span>
+              </h3>
+              <div className="space-y-2">
+                <input
+                  type="range"
+                  min={30}
+                  max={100}
+                  value={(() => {
+                    const selected = regions.filter((r) =>
+                      selectedRegionIds.includes(r.id)
+                    );
+                    if (selected.length === 0) return DEFAULT_STRENGTH;
+                    const avg =
+                      selected.reduce(
+                        (sum, r) => sum + ((r.strength ?? DEFAULT_STRENGTH / 100) * 100),
+                        0
+                      ) / selected.length;
+                    return Math.round(avg);
+                  })()}
+                  onChange={(e) =>
+                    handleSetAllStrength(Number(e.target.value) / 100)
+                  }
+                  disabled={isRepairing}
+                  className="input-range"
+                />
+                <div className="flex justify-between text-xs text-ink-400">
+                  <span>轻柔 30%</span>
+                  <span>强力 100%</span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </aside>
 
-        <section className="glass-panel flex min-h-0 flex-col overflow-hidden p-4">
+        <section className="glass-panel flex min-h-0 min-w-0 flex-1 flex-col p-4">
           {image && (
             <ImagePreview
-              src={`/api/images/${image.id}/download?result=false`}
+              src={previewSrc}
               alt={image.originalName}
+              resultSrc={
+                image.currentVersion && image.currentVersion > 0
+                  ? downloadImageUrl(image.id, 'webp', 85, 1, image.currentVersion)
+                  : undefined
+              }
+              showCompare={!!(image.resultUrl && image.currentVersion && image.currentVersion > 0)}
             >
               {image.width > 0 && image.height > 0 && (
                 <RegionOverlay
                   imageWidth={image.width}
                   imageHeight={image.height}
                   regions={regions}
-                  selectedId={selectedRegionId}
-                  onSelectRegion={setSelectedRegionId}
+                  selectedIds={selectedRegionIds}
+                  onToggleRegion={handleToggleRegion}
+                  onClearSelection={handleClearSelection}
                   onAddRegion={handleAddRegion}
                   onRemoveRegion={handleRemoveRegion}
                   drawMode={drawMode}
@@ -340,7 +530,7 @@ export default function ImageEditor() {
             </ImagePreview>
           )}
 
-          <div className="mt-4 flex items-center justify-between gap-4">
+          <div className="mt-4 shrink-0 flex items-center justify-between gap-4">
             <div className="flex flex-wrap items-center gap-2">
               {(Object.keys(defectStats) as DefectType[]).map((type) => (
                 <span
@@ -359,11 +549,16 @@ export default function ImageEditor() {
                   {defectTypeLabels[type]} · {defectStats[type]}
                 </span>
               ))}
+              {selectedRegionIds.length > 0 && (
+                <span className="chip-active">
+                  已选 {selectedRegionIds.length} 个
+                </span>
+              )}
             </div>
             <button
               onClick={handleStartRepair}
               disabled={
-                regions.length === 0 || isDetecting || isRepairing
+                selectedRegionIds.length === 0 || isDetecting || isRepairing
               }
               className="btn-primary flex items-center gap-2 whitespace-nowrap"
             >
@@ -372,12 +567,16 @@ export default function ImageEditor() {
               ) : (
                 <Wand2 size={18} strokeWidth={2} />
               )}
-              {isRepairing ? '修复中...' : '开始修复'}
+              {isRepairing
+                ? '修复中...'
+                : selectedRegionIds.length > 0
+                  ? `修复选中的 ${selectedRegionIds.length} 个区域`
+                  : '请先选择区域'}
             </button>
           </div>
 
           {isRepairing && (
-            <div className="mt-4">
+            <div className="mt-4 shrink-0">
               <ProgressBar
                 progress={repairProgress}
                 stage={stageLabels[repairStage] || repairStage}
@@ -387,20 +586,20 @@ export default function ImageEditor() {
           )}
 
           {error && (
-            <div className="mt-4 rounded-xl bg-red-500/10 px-4 py-3 text-sm text-red-400">
+            <div className="mt-4 shrink-0 rounded-xl bg-red-500/10 px-4 py-3 text-sm text-red-400">
               {error}
             </div>
           )}
         </section>
 
-        <aside className="glass-panel flex flex-col p-5">
+        <aside className="glass-panel w-[320px] shrink-0 min-h-0 flex flex-col p-5">
           <h3 className="mb-3 flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-ink-400">
             <span>区域列表</span>
             <span className="font-mono text-ink-500">{regions.length}</span>
           </h3>
 
           {regions.length === 0 ? (
-            <div className="flex flex-1 flex-col items-center justify-center text-center">
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center text-center">
               <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-ink-800 text-ink-500">
                 <Sparkles size={22} strokeWidth={2} />
               </div>
@@ -410,57 +609,92 @@ export default function ImageEditor() {
               </p>
             </div>
           ) : (
-            <div className="flex-1 space-y-2 overflow-y-auto pr-1">
-              {regions.map((region, idx) => (
-                <div
-                  key={region.id}
-                  onClick={() => setSelectedRegionId(region.id)}
-                  className={`group flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all duration-200 ${
-                    selectedRegionId === region.id
-                      ? 'border-cyan/50 bg-cyan/5'
-                      : 'border-ink-700 bg-ink-800/40 hover:border-ink-600'
-                  }`}
-                >
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+              {regions.map((region, idx) => {
+                const isSelected = selectedRegionIds.includes(region.id);
+                const strengthPercent = Math.round(
+                  (region.strength ?? DEFAULT_STRENGTH / 100) * 100
+                );
+                return (
                   <div
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold"
-                    style={{
-                      backgroundColor: `${defectTypeColors[region.type]}20`,
-                      color: defectTypeColors[region.type],
-                    }}
+                    key={region.id}
+                    onClick={() => handleToggleRegion(region.id, false)}
+                    className={`group cursor-pointer rounded-xl border p-3 transition-all duration-200 ${
+                      isSelected
+                        ? 'border-cyan/50 bg-cyan/5'
+                        : 'border-ink-700 bg-ink-800/40 hover:border-ink-600'
+                    }`}
                   >
-                    {idx + 1}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="font-medium text-sm"
-                        style={{ color: defectTypeColors[region.type] }}
+                    <div className="flex items-start gap-3">
+                      <div
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold"
+                        style={{
+                          backgroundColor: `${defectTypeColors[region.type]}20`,
+                          color: defectTypeColors[region.type],
+                        }}
                       >
-                        {defectTypeLabels[region.type]}
-                      </span>
-                      {region.confidence < 1 && (
-                        <span className="text-xs text-ink-500">
-                          {Math.round(region.confidence * 100)}%
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-0.5 text-xs text-ink-500 font-mono">
-                      {Math.round(region.bbox.x * image.width)}×{Math.round(region.bbox.y * image.height)}
-                      {' · '}
-                      {Math.round(region.bbox.width * image.width)}×{Math.round(region.bbox.height * image.height)}
+                        {idx + 1}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span
+                            className="font-medium text-sm truncate"
+                            style={{ color: defectTypeColors[region.type] }}
+                          >
+                            {defectTypeLabels[region.type]}
+                          </span>
+                          {region.confidence < 1 && (
+                            <span className="text-xs text-ink-500 shrink-0">
+                              {Math.round(region.confidence * 100)}%
+                            </span>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveRegion(region.id);
+                            }}
+                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-ink-500 opacity-0 transition-all hover:bg-red-500/15 hover:text-red-400 group-hover:opacity-100"
+                          >
+                            <X size={14} strokeWidth={2} />
+                          </button>
+                        </div>
+                        <div className="mt-0.5 text-xs text-ink-500 font-mono">
+                          {Math.round(region.bbox.x * image.width)}×
+                          {Math.round(region.bbox.y * image.height)}
+                          {' · '}
+                          {Math.round(region.bbox.width * image.width)}×
+                          {Math.round(region.bbox.height * image.height)}
+                        </div>
+
+                        <div className="mt-2">
+                          <div className="flex items-center justify-between text-xs text-ink-500 mb-1">
+                            <span>修复强度</span>
+                            <span className="font-mono text-cyan">
+                              {strengthPercent}%
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min={30}
+                            max={100}
+                            value={strengthPercent}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              handleRegionStrengthChange(
+                                region.id,
+                                Number(e.target.value) / 100
+                              );
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            disabled={isRepairing}
+                            className="input-range w-full"
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemoveRegion(region.id);
-                    }}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-ink-500 opacity-0 transition-all hover:bg-red-500/15 hover:text-red-400 group-hover:opacity-100"
-                  >
-                    <X size={14} strokeWidth={2} />
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </aside>
